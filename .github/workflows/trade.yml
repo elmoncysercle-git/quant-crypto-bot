@@ -2,7 +2,7 @@ name: trade
 
 on:
   schedule:
-    - cron: "0 */8 * * *"   # every 8 hours
+    - cron: "0 */8 * * *"
   workflow_dispatch:
 
 jobs:
@@ -13,7 +13,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          clean: true          # force a fresh tree
+          clean: true
           persist-credentials: true
 
       - uses: actions/setup-python@v5
@@ -26,7 +26,6 @@ jobs:
           pip install -r requirements.txt
           if [ -f requirements-quantum.txt ]; then pip install -r requirements-quantum.txt; fi
 
-      # --- DEBUG + SAFETY PATCH STEPS ---
       - name: Show repo tree & key files
         run: |
           echo "==== HEAD ====" && git rev-parse HEAD
@@ -35,24 +34,19 @@ jobs:
           echo "==== bot/trade.py (first 80 lines) BEFORE PATCH ====" && sed -n '1,80p' bot/trade.py || true
 
       - name: Patch trade.py if old KeyError-prone line exists
+        shell: bash
         run: |
           set -e
           if grep -q 'cfg\["exchange"\]\["name"\]' bot/trade.py; then
-            python - <<'PY'
-from pathlib import Path
-p = Path("bot/trade.py")
-s = p.read_text()
-s = s.replace('client = make_client(cfg["exchange"]["name"])',
-              'ex_name = (cfg.get("exchange") or {}).get("name", "kraken")\n    client = make_client(ex_name)')
-p.write_text(s)
-print("Patched bot/trade.py on runner.")
-PY
+            repl=$'ex_name = (cfg.get("exchange") or {}).get("name", "kraken")\n    client = make_client(ex_name)'
+            sed -i 's/client = make_client(cfg\["exchange"\]\["name"\])/'"$repl"'/g' bot/trade.py
+            echo "Patched bot/trade.py on runner."
           else
             echo "No patch needed."
           fi
-          echo "==== bot/trade.py (first 80 lines) AFTER PATCH ====" && sed -n '1,80p' bot/trade.py
+          echo "==== bot/trade.py (first 80 lines) AFTER PATCH ===="
+          sed -n '1,80p' bot/trade.py
 
-      # --- RUN BOT ---
       - name: Trade
         env:
           EXCHANGE_KEY: ${{ secrets.EXCHANGE_KEY }}
