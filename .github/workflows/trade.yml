@@ -26,8 +26,4 @@ jobs:
           EXCHANGE_PASSWORD: ${{ secrets.EXCHANGE_PASSWORD }}
           DWAVE_API_TOKEN: ${{ secrets.DWAVE_API_TOKEN }}
         run: |
-          python - << 'PY'
-import os
-print("Starting trade job...")
-os.system("python -m bot.trade")
-PY
+          python -m bot.trade
