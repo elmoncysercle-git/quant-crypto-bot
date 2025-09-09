@@ -41,5 +41,6 @@ jobs:
           if [ -f state/state.json ]; then
             git add state/state.json
             git diff --cached --quiet || git commit -m "Update state [skip ci]"
-            git push
+            git pull --rebase origin main || true
+            git push origin HEAD:main || true
           fi
