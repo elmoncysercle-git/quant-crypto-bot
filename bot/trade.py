@@ -1,12 +1,16 @@
 import time
 from typing import Dict, List
 from .utils import load_config, setup_logging, load_state, save_state
-from .exchange import make_client, price, balance_of, market_buy, market_sell
+from .exchange import (
+    make_client, price, balance_of, market_buy, market_sell,
+    load_markets, market_info, min_trade_constraints, amount_to_precision
+)
 from .data import stack_closes
 from .quantum_alloc import select_assets
 from .strategy import equal_weights
 
-INITIAL_EQUITY = 1000.0  # first point for the chart
+INITIAL_EQUITY = 1000.0     # first point for the chart if empty
+USER_MIN_NOTIONAL = 1.0     # your threshold; exchange min will override if higher
 
 def _ensure_equity_history(state: dict):
     if "equity_history" not in state or not isinstance(state["equity_history"], list):
@@ -71,6 +75,7 @@ def main():
     _ensure_equity_history(state)
 
     client = make_client(ex_name)
+    load_markets(client)  # preload market metadata
 
     closes = stack_closes(client, symbols, timeframe="1d", lookback_days=lookback)
 
@@ -113,27 +118,53 @@ def main():
         p = price(client, s)
         targets[s] = (equity * weights.get(s, 0.0)) / p if p else 0.0
 
-    # Drift-correct with simplistic market orders (skip <$1 notionals)
+    # Drift-correct with market orders respecting exchange minimums
     for s in symbols:
         p = price(client, s)
         if not p:
             log.warning(f"No price for {s}; skipping.")
             continue
+
+        # get exchange min constraints
+        cons = min_trade_constraints(client, s, p)
+        min_cost_ex = cons["min_cost"]            # exchange min notional (USD)
+        min_amt_ex = cons["min_amount"]           # exchange min amount (base units)
+
+        # compute diff and notional
         asset = s.split("/")[0]
         cur_total, _, _ = balance_of(client, asset)
         diff = targets[s] - cur_total
-        if abs(diff) * p < 1:   # lowered to $1 threshold
+        notional = abs(diff) * p
+
+        # user threshold ($1) vs exchange min ($5-10 typically); enforce the higher
+        min_notional = max(USER_MIN_NOTIONAL, min_cost_ex)
+
+        if notional < min_notional:
+            log.info(f"Skip {s}: notional ${notional:.2f} < min ${min_notional:.2f}")
             continue
+
+        # ensure at least exchange min amount
+        order_amt = abs(diff)
+        if min_amt_ex and order_amt < min_amt_ex:
+            order_amt = min_amt_ex
+
+        # round to precision
+        order_amt = amount_to_precision(client, s, order_amt)
+        if order_amt <= 0:
+            log.info(f"Skip {s}: rounded amount too small.")
+            continue
+
         try:
             if diff > 0:
-                log.info(f"BUY {s} amount={diff:.6f}")
-                market_buy(client, s, round(diff, 6))
+                log.info(f"BUY {s} amount={order_amt:.10f} (min_cost≈{min_cost_ex:.2f}, min_amt≈{min_amt_ex})")
+                market_buy(client, s, order_amt)
             else:
-                log.info(f"SELL {s} amount={-diff:.6f}")
-                market_sell(client, s, round(-diff, 6))
+                log.info(f"SELL {s} amount={order_amt:.10f} (min_cost≈{min_cost_ex:.2f}, min_amt≈{min_amt_ex})")
+                market_sell(client, s, order_amt)
         except Exception as e:
             log.exception(f"Order error for {s}: {e}")
 
+    # Record post-trade equity
     try:
         _record_live_equity(state, client, symbols, base)
     except Exception as e:
