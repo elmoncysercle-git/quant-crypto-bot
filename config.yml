@@ -11,13 +11,13 @@ trading:
   max_weight: 0.6
   risk_aversion: 0.5
   symbols:
-    - BTC/USDT
-    - ETH/USDT
-    - SOL/USDT
-    - LINK/USDT
-    - AVAX/USDT
-    - APT/USDT
-    - ARB/USDT
+    - BTC/USD
+    - ETH/USD
+    - SOL/USD
+    - LINK/USD
+    - AVAX/USD
+    - APT/USD
+    - ARB/USD
 logging:
   level: INFO
 state_file: state/state.json
