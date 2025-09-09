@@ -21,3 +21,4 @@ trading:
 logging:
   level: INFO
 state_file: state/state.json
+
