@@ -1,0 +1,4 @@
+# Quantum / optimizer deps used by the bot workflow only
+dimod==0.12.15
+dwave-neal==0.6.0
+scipy==1.13.1
