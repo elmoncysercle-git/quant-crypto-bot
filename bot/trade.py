@@ -63,7 +63,6 @@ def main():
     cash_buf = float(trading.get("cash_buffer_pct", 0.15))
     mode = cfg.get("mode", "paper")
 
-    # Log a warning if exchange block was missing
     if "exchange" not in cfg:
         log.warning("config.yml is missing 'exchange:' block. Defaulting to exchange: kraken")
 
@@ -88,12 +87,13 @@ def main():
         save_state(state_path, state)
         return
 
-    # LIVE path
+    # LIVE: record pre-trade equity
     try:
         _record_live_equity(state, client, symbols, base)
     except Exception as e:
         log.warning(f"Could not record pre-trade live equity: {e}")
 
+    # Compute total equity (base + coins) for sizing
     _, free_base, used_base = balance_of(client, base)
     equity = free_base + used_base
     for s in symbols:
@@ -107,11 +107,13 @@ def main():
             except Exception:
                 pass
 
+    # Targets in asset units
     targets = {}
     for s in symbols:
         p = price(client, s)
         targets[s] = (equity * weights.get(s, 0.0)) / p if p else 0.0
 
+    # Drift-correct with simplistic market orders (skip <$1 notionals)
     for s in symbols:
         p = price(client, s)
         if not p:
@@ -120,7 +122,7 @@ def main():
         asset = s.split("/")[0]
         cur_total, _, _ = balance_of(client, asset)
         diff = targets[s] - cur_total
-        if abs(diff) * p < 10:
+        if abs(diff) * p < 1:   # lowered to $1 threshold
             continue
         try:
             if diff > 0:
@@ -141,4 +143,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-
