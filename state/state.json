@@ -1,0 +1,25 @@
+{
+  "last_plan": {
+    "chosen": [
+      "ETH/USD",
+      "LINK/USD",
+      "SOL/USD"
+    ],
+    "weights": {
+      "BTC/USD": 0.0,
+      "ETH/USD": 0.2833333333333333,
+      "SOL/USD": 0.2833333333333333,
+      "LINK/USD": 0.2833333333333333,
+      "AVAX/USD": 0.0,
+      "APT/USD": 0.0,
+      "ARB/USD": 0.0
+    },
+    "ts": 1757433112
+  },
+  "equity_history": [
+    [
+      1757433112,
+      992.5713322979495
+    ]
+  ]
+}
