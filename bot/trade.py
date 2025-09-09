@@ -6,9 +6,14 @@ from .data import stack_closes
 from .quantum_alloc import select_assets
 from .strategy import equal_weights
 
-def _init_equity_history(state: dict):
+INITIAL_EQUITY = 1000.0  # first point for the chart
+
+def _ensure_equity_history(state: dict):
+    """Ensure equity_history exists; if empty, seed with INITIAL_EQUITY immediately."""
     if "equity_history" not in state or not isinstance(state["equity_history"], list):
         state["equity_history"] = []
+    if not state["equity_history"]:
+        state["equity_history"].append([int(time.time()), float(INITIAL_EQUITY)])
 
 def _record_live_equity(state: dict, client, symbols: List[str], base_ccy: str):
     """
@@ -26,19 +31,19 @@ def _record_live_equity(state: dict, client, symbols: List[str], base_ccy: str):
                 equity += total_asset * px
     state["equity_history"].append([int(time.time()), float(equity)])
 
-def _record_paper_equity(state: dict, closes, weights: Dict[str, float], cash_buffer: float):
+def _record_paper_equity(state: dict, closes, weights: Dict[str, float]):
     """
     Simulates equity using the last close-to-close return of the selected portfolio.
-    If no previous equity point exists, start at 1000 immediately.
+    Uses the latest equity in history as the base. If <2 bars, just duplicate last equity now.
     """
-    # Initialize if empty
-    if not state["equity_history"]:
-        state["equity_history"].append([int(time.time()), 1000.0])
-
     if closes.shape[0] < 2:
-        return  # need at least two daily closes to compute a return
+        last_eq = float(state["equity_history"][-1][1])
+        state["equity_history"].append([int(time.time()), last_eq])
+        return
 
-    prev = closes.iloc[-2]; curr = closes.iloc[-1]
+    prev = closes.iloc[-2]
+    curr = closes.iloc[-1]
+
     port_ret = 0.0
     if sum(weights.values()) > 0:
         for s, w in weights.items():
@@ -46,15 +51,15 @@ def _record_paper_equity(state: dict, closes, weights: Dict[str, float], cash_bu
                 r = (float(curr[s]) - float(prev[s])) / float(prev[s])
                 port_ret += w * r
 
-    equity = float(state["equity_history"][-1][1])
-    equity *= (1.0 + port_ret)
+    last_eq = float(state["equity_history"][-1][1])
+    equity = last_eq * (1.0 + port_ret)
     state["equity_history"].append([int(time.time()), float(equity)])
 
 def main():
     log = setup_logging("INFO")
     cfg = load_config("config.yml")
     state = load_state(cfg["state_file"])
-    _init_equity_history(state)
+    _ensure_equity_history(state)  # seed initial point if needed
 
     client = make_client(cfg["exchange"]["name"])
     symbols = cfg["trading"]["symbols"]
@@ -77,7 +82,7 @@ def main():
     state["last_plan"] = {"chosen": chosen, "weights": weights, "ts": int(time.time())}
 
     if cfg["mode"] == "paper":
-        _record_paper_equity(state, closes, weights, cfg["trading"]["cash_buffer_pct"])
+        _record_paper_equity(state, closes, weights)
         log.info("PAPER mode: no orders will be placed.")
         save_state(cfg["state_file"], state)
         return
@@ -140,3 +145,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+
