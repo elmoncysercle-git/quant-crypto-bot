@@ -1,14 +1,14 @@
-mode: paper        # or live later
+mode: live          # <-- flip from paper to live
 exchange:
   name: kraken
 trading:
   base_ccy: USD
-  cash_buffer_pct: 0.15
-  max_positions: 3
+  cash_buffer_pct: 0.50   # keep 50% in cash for day 1
+  max_positions: 2        # limit to 2 coins
   lookback_days: 90
   rebalance_days: 7
   min_weight: 0.05
-  max_weight: 0.6
+  max_weight: 0.40
   risk_aversion: 0.5
   symbols:
     - BTC/USD
@@ -21,3 +21,4 @@ trading:
 logging:
   level: INFO
 state_file: state/state.json
+
