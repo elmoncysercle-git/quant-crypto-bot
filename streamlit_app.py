@@ -57,10 +57,7 @@ if last_plan:
     c1, c2 = st.columns([1,1])
     with c1:
         st.markdown("**Selected assets**")
-        if chosen:
-            st.write(", ".join(chosen))
-        else:
-            st.write("None")
+        st.write(", ".join(chosen) if chosen else "None")
 
     with c2:
         st.markdown("**Target weights (ex-cash)**")
@@ -72,10 +69,7 @@ if last_plan:
         else:
             st.write("(no weights)")
 
-else:
-    st.info("No last_plan found in state yet.")
-
-# --- Optional: current prices snapshot ---
+# --- Price Snapshot ---
 st.subheader("Price Snapshot (on button)")
 if st.button("Fetch latest prices"):
     try:
@@ -88,14 +82,14 @@ if st.button("Fetch latest prices"):
                 t = client.fetch_ticker(s)
                 px = t.get("last") or t.get("close")
                 rows.append({"Symbol": s, "Price": px})
-            except Exception as e:
+            except Exception:
                 rows.append({"Symbol": s, "Price": None})
         dfp = pd.DataFrame(rows)
         st.dataframe(dfp, use_container_width=True)
     except Exception as e:
         st.error(f"Failed to fetch prices: {e}")
 
-# --- Optional: equity curve (if you decide to append to equity_history in the bot) ---
+# --- Equity Curve ---
 if equity_history:
     st.subheader("Equity Curve (from state)")
     try:
