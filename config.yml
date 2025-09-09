@@ -1,4 +1,4 @@
-mode: paper
+mode: paper        # or live later
 exchange:
   name: kraken
 trading:
