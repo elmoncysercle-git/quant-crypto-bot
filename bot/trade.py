@@ -1,24 +1,43 @@
 import time
 from typing import Dict, List
-from .utils import load_config, setup_logging, load_state, save_state
+import requests
+from .utils import load_config, setup_logging, load_state, save_state, env
 from .exchange import (
     make_client, price, balance_of, market_buy, market_sell,
-    load_markets, market_info, min_trade_constraints, amount_to_precision
+    load_markets, min_trade_constraints, amount_to_precision
 )
 from .data import stack_closes
 from .quantum_alloc import select_assets
 from .strategy import equal_weights
 
-INITIAL_EQUITY = 1000.0     # first point for the chart if empty
-USER_MIN_NOTIONAL = 1.0     # your threshold; exchange min will override if higher
+INITIAL_EQUITY = 1000.0       # seed the first chart point if empty
+USER_MIN_NOTIONAL = 1.0       # your threshold; exchange min will override if higher
 
+# --------- Telegram helpers ---------
+def _tg_enabled() -> bool:
+    return bool(env("TELEGRAM_BOT_TOKEN") and env("TELEGRAM_CHAT_ID"))
+
+def _tg_send(text: str):
+    """Fire-and-forget Telegram message; no-op if not configured."""
+    token = env("TELEGRAM_BOT_TOKEN")
+    chat_id = env("TELEGRAM_CHAT_ID")
+    if not token or not chat_id:
+        return
+    try:
+        url = f"https://api.telegram.org/bot{token}/sendMessage"
+        requests.post(url, data={"chat_id": chat_id, "text": text})
+    except Exception:
+        pass  # never crash trading on alert errors
+
+# --------- Equity bookkeeping ---------
 def _ensure_equity_history(state: dict):
     if "equity_history" not in state or not isinstance(state["equity_history"], list):
         state["equity_history"] = []
     if not state["equity_history"]:
         state["equity_history"].append([int(time.time()), float(INITIAL_EQUITY)])
 
-def _record_live_equity(state: dict, client, symbols: List[str], base_ccy: str):
+def _record_live_equity(state: dict, client, symbols: List[str], base_ccy: str) -> float:
+    """Returns equity after recording it."""
     _, free_base, used_base = balance_of(client, base_ccy)
     equity = free_base + used_base
     for s in symbols:
@@ -29,6 +48,7 @@ def _record_live_equity(state: dict, client, symbols: List[str], base_ccy: str):
             if px:
                 equity += total_asset * px
     state["equity_history"].append([int(time.time()), float(equity)])
+    return float(equity)
 
 def _record_paper_equity(state: dict, closes, weights: Dict[str, float]):
     if closes.shape[0] < 2:
@@ -75,12 +95,19 @@ def main():
     _ensure_equity_history(state)
 
     client = make_client(ex_name)
-    load_markets(client)  # preload market metadata
+    load_markets(client)  # cache market metadata
 
     closes = stack_closes(client, symbols, timeframe="1d", lookback_days=lookback)
 
+    # Allocation via QUBO (or fallback) + weight shaping
     chosen = select_assets(closes, lam=lam, max_positions=max_positions)
     weights = equal_weights(chosen, symbols, min_w=min_w, max_w=max_w, cash_buffer=cash_buf)
+
+    # Plan summary alert
+    cash_pct = f"{cash_buf:.0%}"
+    plan_lines = [f"{s} {weights.get(s,0):.0%}" for s in symbols if weights.get(s,0) > 0]
+    _tg_send(f"📣 Plan ({mode.upper()}): " + (", ".join(plan_lines) if plan_lines else "no positions")
+             + f" | cash {cash_pct}")
 
     log.info(f"Selected: {chosen}")
     log.info(f"Target weights: {weights} (cash buffer {cash_buf})")
@@ -92,9 +119,10 @@ def main():
         save_state(state_path, state)
         return
 
-    # LIVE: record pre-trade equity
+    # LIVE: pre-trade equity (and alert)
     try:
-        _record_live_equity(state, client, symbols, base)
+        eq_pre = _record_live_equity(state, client, symbols, base)
+        _tg_send(f"💼 Pre-trade equity: ${eq_pre:,.2f}")
     except Exception as e:
         log.warning(f"Could not record pre-trade live equity: {e}")
 
@@ -123,24 +151,23 @@ def main():
         p = price(client, s)
         if not p:
             log.warning(f"No price for {s}; skipping.")
+            _tg_send(f"⚠️ Skip {s}: no price.")
             continue
 
-        # get exchange min constraints
         cons = min_trade_constraints(client, s, p)
-        min_cost_ex = cons["min_cost"]            # exchange min notional (USD)
-        min_amt_ex = cons["min_amount"]           # exchange min amount (base units)
+        min_cost_ex = cons["min_cost"]          # exchange min notional in quote (USD)
+        min_amt_ex = cons["min_amount"]         # exchange min amount in base
+        min_notional = max(USER_MIN_NOTIONAL, min_cost_ex)
 
-        # compute diff and notional
         asset = s.split("/")[0]
         cur_total, _, _ = balance_of(client, asset)
         diff = targets[s] - cur_total
         notional = abs(diff) * p
 
-        # user threshold ($1) vs exchange min ($5-10 typically); enforce the higher
-        min_notional = max(USER_MIN_NOTIONAL, min_cost_ex)
-
         if notional < min_notional:
-            log.info(f"Skip {s}: notional ${notional:.2f} < min ${min_notional:.2f}")
+            msg = f"⏭️ Skip {s}: notional ${notional:.2f} < min ${min_notional:.2f}"
+            log.info(msg)
+            _tg_send(msg)
             continue
 
         # ensure at least exchange min amount
@@ -148,25 +175,29 @@ def main():
         if min_amt_ex and order_amt < min_amt_ex:
             order_amt = min_amt_ex
 
-        # round to precision
         order_amt = amount_to_precision(client, s, order_amt)
         if order_amt <= 0:
             log.info(f"Skip {s}: rounded amount too small.")
+            _tg_send(f"⏭️ Skip {s}: rounded amount too small.")
             continue
 
         try:
             if diff > 0:
                 log.info(f"BUY {s} amount={order_amt:.10f} (min_cost≈{min_cost_ex:.2f}, min_amt≈{min_amt_ex})")
                 market_buy(client, s, order_amt)
+                _tg_send(f"✅ BUY {s} {order_amt:.10f}")
             else:
                 log.info(f"SELL {s} amount={order_amt:.10f} (min_cost≈{min_cost_ex:.2f}, min_amt≈{min_amt_ex})")
                 market_sell(client, s, order_amt)
+                _tg_send(f"✅ SELL {s} {order_amt:.10f}")
         except Exception as e:
             log.exception(f"Order error for {s}: {e}")
+            _tg_send(f"❌ Order error {s}: {e}")
 
-    # Record post-trade equity
+    # Record post-trade equity (and alert)
     try:
-        _record_live_equity(state, client, symbols, base)
+        eq_post = _record_live_equity(state, client, symbols, base)
+        _tg_send(f"ℹ️ Post-trade equity: ${eq_post:,.2f}")
     except Exception as e:
         log.warning(f"Could not record post-trade live equity: {e}")
 
