@@ -38,6 +38,11 @@ jobs:
           sed -n '1,120p' config.yml || true
           echo "==== bot/trade.py (first 120 lines) ===="
           sed -n '1,120p' bot/trade.py || true
+          
+      - name: Show trade.py content
+        run: |
+          echo "==== bot/trade.py head ===="
+          head -n 40 bot/trade.py
 
       - name: Trade
         env:
