@@ -1,0 +1,25 @@
+mode: paper  # 'paper' or 'live'
+exchange:
+  name: kraken
+  # API keys are read from environment variables and NEVER committed:
+  # EXCHANGE_KEY, EXCHANGE_SECRET, EXCHANGE_PASSWORD (optional)
+trading:
+  base_ccy: USDT
+  cash_buffer_pct: 0.15   # keep 15% in cash
+  max_positions: 3
+  lookback_days: 90
+  rebalance_days: 7
+  min_weight: 0.05
+  max_weight: 0.6
+  risk_aversion: 0.5      # λ in mean-variance
+  symbols:
+    - BTC/USDT
+    - ETH/USDT
+    - SOL/USDT
+    - LINK/USDT
+    - AVAX/USDT
+    - APT/USDT
+    - ARB/USDT
+logging:
+  level: INFO
+state_file: state/state.json
