@@ -24,6 +24,17 @@ jobs:
           pip install -r requirements.txt
           # Only Actions installs the quantum deps:
           if [ -f requirements-quantum.txt ]; then pip install -r requirements-quantum.txt; fi
+          
+      - name: Sanity print files
+        run: |
+          echo "==== GIT HEAD ===="
+          git rev-parse HEAD
+          echo "==== TREE ===="
+          ls -R
+          echo "==== config.yml ===="
+          sed -n '1,120p' config.yml || true
+          echo "==== bot/trade.py (first 120 lines) ===="
+          sed -n '1,120p' bot/trade.py || true
 
       - name: Trade
         env:
