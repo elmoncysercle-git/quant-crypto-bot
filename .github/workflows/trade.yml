@@ -9,18 +9,22 @@ jobs:
   run:
     runs-on: ubuntu-latest
     permissions:
-      contents: read
+      contents: write  # allow committing state/state.json back to the repo
     steps:
       - uses: actions/checkout@v4
+        with:
+          persist-credentials: true  # keep token for pushing
       - uses: actions/setup-python@v5
         with:
           python-version: "3.11"
+
       - name: Install
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements.txt
           # Only Actions installs the quantum deps:
           if [ -f requirements-quantum.txt ]; then pip install -r requirements-quantum.txt; fi
+
       - name: Trade
         env:
           EXCHANGE_KEY: ${{ secrets.EXCHANGE_KEY }}
@@ -30,3 +34,12 @@ jobs:
         run: |
           python -m bot.trade
 
+      - name: Commit state (if changed)
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          if [ -f state/state.json ]; then
+            git add state/state.json
+            git diff --cached --quiet || git commit -m "Update state [skip ci]"
+            git push
+          fi
