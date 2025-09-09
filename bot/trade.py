@@ -29,10 +29,15 @@ def _record_live_equity(state: dict, client, symbols: List[str], base_ccy: str):
 def _record_paper_equity(state: dict, closes, weights: Dict[str, float], cash_buffer: float):
     """
     Simulates equity using the last close-to-close return of the selected portfolio.
-    If no previous equity point exists, start at 1000. Skips if <2 close bars.
+    If no previous equity point exists, start at 1000 immediately.
     """
+    # Initialize if empty
+    if not state["equity_history"]:
+        state["equity_history"].append([int(time.time()), 1000.0])
+
     if closes.shape[0] < 2:
-        return
+        return  # need at least two daily closes to compute a return
+
     prev = closes.iloc[-2]; curr = closes.iloc[-1]
     port_ret = 0.0
     if sum(weights.values()) > 0:
@@ -40,7 +45,8 @@ def _record_paper_equity(state: dict, closes, weights: Dict[str, float], cash_bu
             if w > 0 and s in prev.index and s in curr.index:
                 r = (float(curr[s]) - float(prev[s])) / float(prev[s])
                 port_ret += w * r
-    equity = 1000.0 if not state["equity_history"] else float(state["equity_history"][-1][1])
+
+    equity = float(state["equity_history"][-1][1])
     equity *= (1.0 + port_ret)
     state["equity_history"].append([int(time.time()), float(equity)])
 
