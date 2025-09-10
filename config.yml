@@ -1,4 +1,4 @@
-mode: live              # or "paper"
+mode: live
 exchange:
   name: kraken
 
@@ -13,14 +13,12 @@ trading:
     - APT/USD
     - ARB/USD
 
-  # Core params (same as before)
   lookback_days: 90
   min_weight: 0.05
   max_weight: 0.60
 
-  # 🔧 Optional knobs (all optional; safe defaults used if omitted)
-  turnover_cap: 0.10       # limit per-asset change per run (e.g., 0.10 = 10 percentage points)
-
+  # Optional knobs (remove any/all; trade.py has defaults)
+  turnover_cap: 0.10
   regime_tuners:
     bull:
       cash_buffer: 0.15
@@ -37,7 +35,6 @@ trading:
 
 logging:
   level: INFO
-
 state_file: state/state.json
 
 
