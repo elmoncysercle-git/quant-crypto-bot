@@ -1,15 +1,9 @@
-mode: live          # <-- flip from paper to live
+mode: live              # or "paper"
 exchange:
   name: kraken
+
 trading:
   base_ccy: USD
-  cash_buffer_pct: 0.50   # keep 50% in cash for day 1
-  max_positions: 2        # limit to 2 coins
-  lookback_days: 90
-  rebalance_days: 7
-  min_weight: 0.05
-  max_weight: 0.40
-  risk_aversion: 0.5
   symbols:
     - BTC/USD
     - ETH/USD
@@ -18,7 +12,32 @@ trading:
     - AVAX/USD
     - APT/USD
     - ARB/USD
+
+  # Core params (same as before)
+  lookback_days: 90
+  min_weight: 0.05
+  max_weight: 0.60
+
+  # 🔧 Optional knobs (all optional; safe defaults used if omitted)
+  turnover_cap: 0.10       # limit per-asset change per run (e.g., 0.10 = 10 percentage points)
+
+  regime_tuners:
+    bull:
+      cash_buffer: 0.15
+      max_positions: 4
+      lam: 0.40
+    chop:
+      cash_buffer: 0.35
+      max_positions: 2
+      lam: 0.60
+    bear:
+      cash_buffer: 0.55
+      max_positions: 1
+      lam: 0.80
+
 logging:
   level: INFO
+
 state_file: state/state.json
+
 
