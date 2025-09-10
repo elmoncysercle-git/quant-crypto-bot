@@ -1,3 +1,4 @@
+# bot/trade.py
 import time
 from typing import Dict, List
 import requests
@@ -15,13 +16,11 @@ from .regime import market_regime
 INITIAL_EQUITY = 1000.0
 USER_MIN_NOTIONAL = 1.0  # raise to $10–$25 later to reduce micro-orders
 
-
 # ---------------- Telegram helpers ----------------
 def _tg_enabled() -> bool:
     return bool(env("TELEGRAM_BOT_TOKEN") and env("TELEGRAM_CHAT_ID"))
 
 def _tg_send(text: str):
-    """Fire-and-forget Telegram message; never crash trading on alert errors."""
     token = env("TELEGRAM_BOT_TOKEN")
     chat_id = env("TELEGRAM_CHAT_ID")
     if not token or not chat_id:
@@ -31,7 +30,6 @@ def _tg_send(text: str):
         requests.post(url, data={"chat_id": chat_id, "text": text})
     except Exception:
         pass
-
 
 # ---------------- Equity bookkeeping ----------------
 def _ensure_equity_history(state: dict):
@@ -69,10 +67,8 @@ def _record_paper_equity(state: dict, closes, weights: Dict[str, float]):
     equity = last_eq * (1.0 + port_ret)
     state["equity_history"].append([int(time.time()), float(equity)])
 
-
 # ---------------- Config knobs ----------------
 def _read_regime_knobs(trading_cfg: dict):
-    """Read optional knobs from config with safe defaults."""
     defaults = {
         "bull": {"cash_buffer": 0.15, "max_positions": 4, "lam": 0.40},
         "chop": {"cash_buffer": 0.35, "max_positions": 2, "lam": 0.60},
@@ -91,8 +87,6 @@ def _read_regime_knobs(trading_cfg: dict):
     turnover_cap = float((trading_cfg or {}).get("turnover_cap", 0.10))
     return knobs, turnover_cap
 
-
-# ---------------- Main ----------------
 def main():
     log = setup_logging("INFO")
     cfg = load_config("config.yml")
@@ -106,6 +100,8 @@ def main():
     max_w = float(trading.get("max_weight", 0.6))
     mode = cfg.get("mode", "paper")
 
+    # NEW: selection config (optional)
+    selection_cfg = (trading.get("selection") or {})
     # Optional knobs
     regime_knobs, turnover_cap = _read_regime_knobs(trading)
 
@@ -118,7 +114,7 @@ def main():
 
     closes = stack_closes(client, symbols, timeframe="1d", lookback_days=lookback)
 
-    # --- Regime & dynamic parameters (config-driven defaults) ---
+    # --- Regime & dynamic parameters ---
     regime = market_regime(closes, benchmark="BTC/USD")
     rk = regime_knobs.get(regime, regime_knobs["chop"])
     dyn_cash = rk["cash_buffer"]
@@ -126,10 +122,11 @@ def main():
     lam = rk["lam"]
     log.info(f"Regime: {regime} | dyn_cash={dyn_cash}, dyn_maxpos={dyn_maxpos}, lam={lam}, turnover_cap={turnover_cap}")
 
-    # --- Selection (quantum or greedy) ---
-    chosen = select_assets(closes, lam=lam, max_positions=dyn_maxpos)
+    # --- Selection (expected_return or risk_adjusted) ---
+    # Pass lam for risk_adjusted; it is ignored by expected_return mode.
+    chosen = select_assets(closes, max_positions=dyn_maxpos, lam=lam, selection_cfg=selection_cfg)
 
-    # --- Weights: inverse-vol with bounds, cash, and turnover cap ---
+    # --- Weights: inverse-vol + bounds + cash + turnover cap ---
     prev_weights = (state.get("last_plan") or {}).get("weights", {})
     weights = vol_target_weights(
         closes, selected=chosen, all_symbols=symbols,
@@ -143,8 +140,9 @@ def main():
     log.info(f"Selected: {chosen}")
     log.info(f"Target weights: {weights} (cash buffer {dyn_cash}) regime={regime}")
     if _tg_enabled():
+        sel_mode = (selection_cfg.get("mode") or "risk_adjusted").lower()
         _tg_send("📣 Plan "
-                 f"({mode.upper()}, regime={regime}): "
+                 f"({mode.upper()}, regime={regime}, sel={sel_mode}): "
                  + (", ".join(plan_lines) if plan_lines else "no positions")
                  + f" | cash {cash_pct}")
 
@@ -164,8 +162,7 @@ def main():
     # LIVE: pre-trade equity (alert)
     eq_pre = _record_live_equity(state, client, symbols, base)
     log.info(f"Pre-trade equity (USD): {eq_pre:.2f}")
-    if _tg_enabled():
-        _tg_send(f"💼 Pre-trade equity: ${eq_pre:,.2f}")
+    if _tg_enabled(): _tg_send(f"💼 Pre-trade equity: ${eq_pre:,.2f}")
 
     # Compute total equity (base + coins) for sizing
     _, free_base, used_base = balance_of(client, base)
@@ -187,7 +184,7 @@ def main():
         p = price(client, s)
         targets[s] = (equity * weights.get(s, 0.0)) / p if p else 0.0
 
-    # Execute respecting exchange minimums (with Telegram notifications)
+    # Execute respecting exchange minimums (with Telegram)
     for s in symbols:
         p = price(client, s)
         if not p:
@@ -237,9 +234,7 @@ def main():
 
     eq_post = _record_live_equity(state, client, symbols, base)
     log.info(f"Post-trade equity (USD): {eq_post:.2f}")
-    if _tg_enabled():
-        _tg_send(f"ℹ️ Post-trade equity: ${eq_post:,.2f}")
-
+    if _tg_enabled(): _tg_send(f"ℹ️ Post-trade equity: ${eq_post:,.2f}")
     save_state(state_path, state)
 
 if __name__ == "__main__":
