@@ -14,27 +14,22 @@ trading:
     - ARB/USD
 
   lookback_days: 90
-  min_weight: 0.05
-  max_weight: 0.60
+  min_weight: 0.03
+  max_weight: 0.55
 
-  # Optional knobs (remove any/all; trade.py has defaults)
-  turnover_cap: 0.10
+  # NEW: selection config
+  selection:
+    mode: expected_return    # options: expected_return | risk_adjusted
+    estimator: ema           # options: ema | sma
+    window: 30               # lookback window in days for the estimator
+    penalize_vol: 0.0        # set >0 to subtract (penalize_vol * vol) from return score
+
+  turnover_cap: 0.20
   regime_tuners:
-    bull:
-      cash_buffer: 0.15
-      max_positions: 4
-      lam: 0.40
-    chop:
-      cash_buffer: 0.35
-      max_positions: 2
-      lam: 0.60
-    bear:
-      cash_buffer: 0.55
-      max_positions: 1
-      lam: 0.80
+    bull: { cash_buffer: 0.15, max_positions: 4, lam: 0.40 }
+    chop: { cash_buffer: 0.25, max_positions: 3, lam: 0.50 }
+    bear: { cash_buffer: 0.45, max_positions: 2, lam: 0.75 }
 
 logging:
   level: INFO
 state_file: state/state.json
-
-
