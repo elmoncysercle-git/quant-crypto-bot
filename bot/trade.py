@@ -14,7 +14,7 @@ from .strategy import vol_target_weights
 from .regime import market_regime
 
 INITIAL_EQUITY = 1000.0
-USER_MIN_NOTIONAL = 1.0  # raise to $10–$25 later to reduce micro-orders
+USER_MIN_NOTIONAL = 10.0  # skip trades below $10 notional
 
 # ---------------- Telegram helpers ----------------
 def _tg_enabled() -> bool:
